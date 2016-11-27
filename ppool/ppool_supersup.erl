@@ -1,6 +1,6 @@
 -module (ppool_supersup).
 -behaviour (supervisor).
--export([start_link/0, stop/0, start_pool/3, start_pool/1]).
+-export([start_link/0, stop/0, start_pool/3, stop_pool/1]).
 -export([init/1]).
 
 start_link() ->

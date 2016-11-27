@@ -60,7 +60,7 @@ handle_call({run, Args}, _From, S=#state{limit=N, sup=Sup, refs=R}) when N > 0 -
   {reply, {ok, Pid}, S#state{limit=N-1, refs=gb_sets:add(Ref,R)}};
 handle_call({run, _Args}, _From, S=#state{limit=N}) when N =< 0 ->
   {reply, noalloc, S};
-handle_call({sync, Args}, _From, S=#state{limit=N, sup=Sup, ref=R}) when N > 0 ->
+handle_call({sync, Args}, _From, S=#state{limit=N, sup=Sup, refs=R}) when N > 0 ->
   {ok, Pid} = supervisor:start_child(Sup, Args),
   Ref = erlang:monitor(process, Pid),
   {reply, {ok, Pid}, S#state{limit=N-1, refs=gb_sets:add(Ref,R)}};
@@ -92,7 +92,7 @@ handle_down_worker(Ref, S=#state{limit=L, sup=Sup, refs=Refs}) ->
       {ok, Pid} = supervisor:start_child(Sup, Args),
       NewRef = erlang:monitor(process, Pid),
       NewRefs = gb_sets:insert(NewRef, gb_sets:delete(Ref, Refs)),
-      {noreply, S#state{refs=NewREfs, queue=Q}};
+      {noreply, S#state{refs=NewRefs, queue=Q}};
     {empty, _} ->
       {noreply, S#state{limit=L+1, refs=gb_sets:delete(Ref, Refs)}}
   end.
