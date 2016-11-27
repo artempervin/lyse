@@ -16,7 +16,7 @@ complete(Pid, Regex, Ref, Count) ->
 
 init([]) ->
   {ok, Re} = application:get_env(regex),
-  {ok, Dir} = application:get_evn(directory),
+  {ok, Dir} = application:get_env(directory),
   {ok, MaxFiles} = application:get_env(max_files),
   ppool:start_pool(?POOL, MaxFiles, {erlcount_counter, start_link, []}),
   case lists:all(fun valid_regex/1, Re) of
@@ -72,7 +72,7 @@ handle_sync_event(Event, _From, State, Data) ->
   {next_state, State, Data}.
 
 terminate(_Reason, _State, _Data) ->
-  ok
+  ok.
 
 code_change(_OldVsn, State, Data, _Extra) ->
   {ok, State, Data}.
