@@ -1,99 +1,140 @@
 -module(wgc). %% wolf, goat and cabbage
 -behaviour (gen_server).
--record(state, {west=[], east=[]}).
+-record(state, {left=[],
+                right=[],
+                position}).
 
 -export([init/1, terminate/2, handle_call/3, handle_cast/2, handle_info/2, code_change/3]).
--export([move/2, status/0, start_link/0, stop/0]).
--define(SIDES, [east, west]).
+-export([move/1, move/0, status/0, start_link/0]).
+-define(SIDES, [left, right]).
 -define(ELEMENTS, [wolf, goat, cabbage]).
 
 %%% Public API
 start_link() ->
   gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-stop() ->
-  gen_server:stop(?MODULE).
-
 init(_Args) ->
-  {ok, #state{west=?ELEMENTS}}.
+  {ok, #state{left=?ELEMENTS, position=left}}.
 
-move(What, Where) ->
-  move(lists:member(What, ?ELEMENTS), lists:member(Where, ?SIDES), What, Where).
-move(false, _, _, Where) ->
-  io:format("Invalid destination: ~p! Only ~p accepted!~n", [Where, ?SIDES]);
-move(_, false, What, _) ->
+%% move to other side without anything
+move() ->
+  Position = gen_server:call(?MODULE, get_current_side),
+  gen_server:call(?MODULE, {move, nil, other_side(Position)}).
+%% move to other side with something
+move(What) ->
+  Position = gen_server:call(?MODULE, get_current_side),
+  move(lists:member(What, ?ELEMENTS), What, other_side(Position)).
+move(false, What, _) ->
   io:format("Invalid element to move: ~p! Only ~p accepted!~n", [What, ?ELEMENTS]);
-move(true, true, What, Where) ->
+move(true, What, Where) ->
   gen_server:call(?MODULE, {move, What, Where}).
 
 status() ->
   gen_server:call(?MODULE, status).
 
-%%% gen_server callbacks
-handle_call({move, What, Where}, _From, S=#state{west=West, east=East}) ->
-  case validate_move(What, Where, East, West) of
+%% gen_server callbacks
+handle_call({move, nil, Where}, _From, S=#state{left=Left, right=Right, position=Position}) ->
+  case validate_move(Where, S) of
     true ->
-      {NewWest, NewEast} = transfer(What, Where, West, East),
-      NewState=#state{west=NewWest, east=NewEast},
+      NewState=#state{left=Left, right=Right, position=other_side(Position)},
       Reply = validate_state(NewState),
-      reply(Reply, NewState);
+      reply_new_state(Reply, NewState);
     false ->
-      {reply, {invalid_move, lists:flatten(io_lib:format("Can't move ~p to ~p! East: ~p, West: ~p", [What, Where, East, West]))}, S}
+      reply_cant_move(nil, Where, S)
+  end;
+handle_call({move, What, Where}, _From, S=#state{position=Position}) ->
+  case validate_move(What, Where, S) of
+    true ->
+      {NewLeft, NewRight} = transfer(What, Where, S),
+      NewState=#state{left=NewLeft, right=NewRight, position=other_side(Position)},
+      Reply = validate_state(NewState),
+      reply_new_state(Reply, NewState);
+    false ->
+      reply_cant_move(What, Where, S)
   end;
 handle_call(status, _From, State) ->
   {reply, state_to_string(State), State};
+handle_call(get_current_side, _From, S=#state{position=Position}) ->
+  {reply, Position, S};
 handle_call(_Msg, _From, State) ->
   {noreply, State}.
-
-state_to_string(#state{west=West, east=East}) ->
-  lists:flatten(io_lib:format("East: ~p, West: ~p~n", [East, West])).
-
-reply(game_over, State) ->
-  {stop, normal, "Game over", State};
-reply(ok, State) ->
-  {reply, ok, State}.
 
 handle_cast(_Msg, State) -> {noreply, State}.
 handle_info(_Msg, State) -> {noreply, State}.
 terminate(_Reason, State) ->
-  io:format(state_to_string(State)),
-  io:format("Game over! Let's play again!").
+  io:format("~s~n", [state_to_string(State)]).
 
 code_change(_OldVsn, State, _Extra) ->  {ok, State}.
 
 % private functions
-transfer(What, east, West, East) ->
-  NewWest = West -- [What],
-  NewEast = [What|East],
-  {NewWest, NewEast};
-transfer(What, west, West, East) ->
-  NewWest = [What|West],
-  NewEast = East -- [What],
-  {NewWest, NewEast}.
+other_side(left) -> right;
+other_side(_)    -> left.
 
-validate_move(What, Where, East, West) ->
+reply_new_state(failure, State) ->
+  {stop, normal, "Game over: you lose!", State};
+reply_new_state(success, State) ->
+  {stop, normal, "Game over: you won!", State};
+reply_new_state(ok, State) ->
+  {reply, state_to_string(State), State}.
+
+reply_cant_move(What, Where, S) ->
+  {reply, lists:flatten(io_lib:format("Can't move to ~p~s! ~s", [Where, elements_to_string(What), state_to_string(S)])), S}.
+elements_to_string(nil) ->
+  [];
+elements_to_string(What) ->
+  lists:flatten(io_lib:format(" with ~p", [What])).
+
+state_to_string(#state{left=Left, right=Right, position=Position}) ->
+  lists:flatten(io_lib:format("left: ~p, right: ~p, Farmer is at ~p side", [Left, Right, Position])).
+
+transfer(What, right, #state{left=Left, right=Right}) ->
+  NewLeft = Left -- [What],
+  NewRight = [What|Right],
+  {NewLeft, NewRight};
+transfer(What, left, #state{left=Left, right=Right}) ->
+  NewLeft = [What|Left],
+  NewRight = Right -- [What],
+  {NewLeft, NewRight}.
+
+%% move with something
+validate_move(What, Where, #state{left=Left, right=Right, position=Position}) ->
+  validate_move(What, Where, Left, Right, Where =:= other_side(Position)).
+validate_move(What, Where, Left, Right, true) ->
   case Where of
-    east -> %% moving 'What' from West to East
-      lists:member(What, West);
-    west -> %% moving 'What' from East to West
-      lists:member(What, East);
+    right -> %% moving 'What' from Left to Right
+      lists:member(What, Left);
+    left -> %% moving 'What' from Right to Left
+      lists:member(What, Right);
     _    -> false
-  end.
+  end;
+validate_move(_,_,_,_,false) -> %% cannot move because Farmer is not there
+  false.
+%% move without anything
+validate_move(Where, #state{position=Position}) ->
+  Where =:= other_side(Position).
 
-select_side(West, East) ->
-  {_, Side} = max({length(West), West}, {length(East), East}),
-  Side.
+select_side(Left, Right) ->
+  {SideElementsCount, SideElements, SideName} = max({length(Left), Left, left}, {length(Right), Right, right}),
+  {SideName, lists:sort(SideElements), SideElementsCount}.
 
-validate_state(#state{west=West, east=East}) ->
-  %% only need to consider a side that have 2 elements
-  Side = lists:sort(select_side(West, East)),
-  validate_state(Side, length(Side)).
-validate_state(List, 2) ->
+%% everything was transfered to another side
+validate_state(#state{left=[]}) ->
+  success;
+%% transfer in progress, check if player has failed
+validate_state(#state{left=Left, right=Right, position=Position}) ->
+  %% only need to consider a side that have more elements
+  {SideName, Elements, Count} = select_side(Left, Right),
+  IsFarmerPresent = SideName =:= Position,
+  validate_state(Elements, Count, IsFarmerPresent).
+validate_state(List, Count, IsFarmerPresent) when Count =:= 2 ->
   First  = lists:nth(1, List),
   Second = lists:nth(2, List),
-  validate_side(First, Second);
-validate_state(_, _) -> %% no check needed
+  validate_side(First, Second, IsFarmerPresent);
+validate_state(_, Count, false) when Count =:= 3 ->
+  failure;
+validate_state(_, Count, true) when Count =:= 3 ->
   ok.
-validate_side(cabbage, goat) -> game_over;
-validate_side(goat, wolf)    -> game_over;
-validate_side(_, _)          -> ok.
+
+validate_side(cabbage, goat, false) -> failure;
+validate_side(goat, wolf, false)    -> failure;
+validate_side(_, _, _)              -> ok.
