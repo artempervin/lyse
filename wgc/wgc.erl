@@ -33,22 +33,16 @@ status() ->
   gen_server:call(?MODULE, status).
 
 %% gen_server callbacks
-handle_call({move, nil, Where}, _From, S=#state{left=Left, right=Right, position=Position}) ->
+handle_call({move, nil, Where}, _From, S) ->
   case validate_move(Where, S) of
-    true ->
-      NewState=#state{left=Left, right=Right, position=other_side(Position)},
-      Reply = validate_state(NewState),
-      reply_new_state(Reply, NewState);
-    false ->
-      reply_cant_move(nil, Where, S)
+    true  -> process_move(S);
+    false -> reply_cant_move(nil, Where, S)
   end;
 handle_call({move, What, Where}, _From, S=#state{position=Position}) ->
   case validate_move(What, Where, S) of
     true ->
       {NewLeft, NewRight} = transfer(What, Where, S),
-      NewState=#state{left=NewLeft, right=NewRight, position=other_side(Position)},
-      Reply = validate_state(NewState),
-      reply_new_state(Reply, NewState);
+      process_move(#state{left=NewLeft, right=NewRight, position=Position});
     false ->
       reply_cant_move(What, Where, S)
   end;
@@ -67,6 +61,11 @@ terminate(_Reason, State) ->
 code_change(_OldVsn, State, _Extra) ->  {ok, State}.
 
 % private functions
+process_move(S=#state{position=Position}) ->
+  NewState = S#state{position=other_side(Position)},
+  Reply = validate_state(NewState),
+  reply_new_state(Reply, NewState).
+
 other_side(left) -> right;
 other_side(_)    -> left.
 
