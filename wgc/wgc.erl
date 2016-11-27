@@ -1,11 +1,9 @@
 -module(wgc). %% wolf, goat and cabbage
 -behaviour (gen_server).
--record(state, {left=[],
-                right=[],
-                position}).
-
 -export([init/1, terminate/2, handle_call/3, handle_cast/2, handle_info/2, code_change/3]).
 -export([move/1, move/0, status/0, start_link/0]).
+
+-record(state, {left=[], right=[], position}).
 -define(SIDES, [left, right]).
 -define(ELEMENTS, [wolf, goat, cabbage]).
 
@@ -33,11 +31,8 @@ status() ->
   gen_server:call(?MODULE, status).
 
 %% gen_server callbacks
-handle_call({move, nil, Where}, _From, S) ->
-  case validate_move(Where, S) of
-    true  -> process_move(S);
-    false -> reply_cant_move(nil, Where, S)
-  end;
+handle_call({move, nil, _Where}, _From, S) ->
+  process_move(S);
 handle_call({move, What, Where}, _From, S=#state{position=Position}) ->
   case validate_move(What, Where, S) of
     true ->
@@ -98,19 +93,15 @@ transfer(What, left, #state{left=Left, right=Right}) ->
 %% move with something
 validate_move(What, Where, #state{left=Left, right=Right, position=Position}) ->
   validate_move(What, Where, Left, Right, Where =:= other_side(Position)).
-validate_move(What, Where, Left, Right, true) ->
-  case Where of
-    right -> %% moving 'What' from Left to Right
-      lists:member(What, Left);
-    left -> %% moving 'What' from Right to Left
-      lists:member(What, Right);
-    _    -> false
-  end;
-validate_move(_,_,_,_,false) -> %% cannot move because Farmer is not there
+%% moving 'What' from Left to Right
+validate_move(What, right, Left, _Right, true) ->
+  lists:member(What, Left);
+%% moving 'What' from Right to Left
+validate_move(What, left, _Left, Right, true) ->
+  lists:member(What, Right);
+%% cannot move because Farmer is on the wrong side
+validate_move(_,_,_,_,false) ->
   false.
-%% move without anything
-validate_move(Where, #state{position=Position}) ->
-  Where =:= other_side(Position).
 
 select_side(Left, Right) ->
   {SideElementsCount, SideElements, SideName} = max({length(Left), Left, left}, {length(Right), Right, right}),
